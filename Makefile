@@ -8,15 +8,21 @@ include $(DEVKITPRO)/wups/share/wups_rules
 #===============================================================================
 # ディレクトリ設定
 #===============================================================================
+TOPDIR ?= $(CURDIR)
+
 WUT_ROOT   := $(DEVKITPRO)/wut
 WUPS_ROOT  := $(DEVKITPRO)/wups
 WUMS_ROOT  := $(DEVKITPRO)/wums
 
-TARGET     := Plugin
-BUILD      := build
-SOURCES    := source
-DATA       := data
-INCLUDES   := include
+TARGET      := Plugin
+BUILD       := build
+
+ROOT_SOURCE := $(TOPDIR)/source
+SOURCES := $(shell find $(ROOT_SOURCE) -type d)
+SOURCES := $(foreach source,$(SOURCES),$(source:$(TOPDIR)/%=%)/)
+
+DATA        := data
+INCLUDES    := include
 
 #===============================================================================
 # コンパイルオプション
@@ -25,7 +31,8 @@ CFLAGS     := -g -Wall -O2 -ffunction-sections $(MACHDEP)
 CFLAGS     += $(INCLUDE) -D__WIIU__ -D__WUT__ -D__WUPS__
 CXXFLAGS   := $(CFLAGS) -std=c++23
 ASFLAGS    := -g $(ARCH) -mregnames
-LDFLAGS    := -g $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map) -T$(WUMS_ROOT)/share/libkernel.ld $(WUPSSPECS)
+LDFLAGS    := -g $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map) $(WUPSSPECS)
+
 LIBS       := -lwups -lwut -lnotifications
 
 # ライブラリのルートディレクトリ
@@ -37,6 +44,7 @@ LIBDIRS    := $(PORTLIBS) $(WUPS_ROOT) $(WUT_ROOT) $(WUMS_ROOT)
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
+export TOPDIR	:=	$(CURDIR)
 
 # パス設定
 export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
@@ -44,10 +52,10 @@ export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
 export DEPSDIR := $(CURDIR)/$(BUILD)
 
 # ファイル収集
-CFILES     := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES   := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-SFILES     := $(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES   := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
+CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
+SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
+BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 # リンカ選択（C++ファイルが存在すればCXXでリンク）
 ifeq ($(strip $(CPPFILES)),)
@@ -64,8 +72,8 @@ export HFILES_BIN  := $(addsuffix .h,$(subst .,_,$(BINFILES)))
 
 # インクルードパス・ライブラリパス
 export INCLUDE     := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
-                      -I$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-                      -I$(CURDIR)/$(BUILD) -I$(LIB_INC)
+                      $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
+                      -I$(CURDIR)/$(BUILD)
 export LIBPATHS    := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
 #===============================================================================
@@ -76,7 +84,7 @@ export LIBPATHS    := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 all: $(BUILD)
 
 $(BUILD):
-	@[ -d $@ ] || mkdir -p $@
+	@$(shell [ ! -d $(BUILD) ] && mkdir -p $(BUILD))
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 clean:
@@ -96,9 +104,10 @@ DEPENDS := $(OFILES:.o=.d)
 all: $(OUTPUT).wps
 
 # 依存関係
-$(OFILES_SRC): $(HFILES_BIN)
-$(OUTPUT).elf: $(OFILES)
 $(OUTPUT).wps: $(OUTPUT).elf
+$(OUTPUT).elf: $(OFILES)
+
+$(OFILES_SRC): $(HFILES_BIN)
 
 #-------------------------------------------------------------------------------
 # バイナリファイルの変換（*.bin → .o/.h）
@@ -106,13 +115,6 @@ $(OUTPUT).wps: $(OUTPUT).elf
 %.bin.o %_bin.h: %.bin
 	@echo $(notdir $<)
 	@$(bin2o)
-
-#-------------------------------------------------------------------------------
-# アセンブリファイルのビルド
-#-------------------------------------------------------------------------------
-%.o: %.s
-	@echo $(notdir $<)
-	@$(CC) -MMD -MP -MF $(DEPSDIR)/$*.d -x assembler-with-cpp $(ASFLAGS) -c $< -o $@ $(ERROR_FILTER)
 
 # 依存関係の自動読み込み
 -include $(DEPENDS)
