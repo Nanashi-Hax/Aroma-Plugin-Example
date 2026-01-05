@@ -1,123 +1,113 @@
-#===============================================================================
-# Plugin Makefile for WUPS-based Wii U development
-#===============================================================================
+# Makefile
+.SUFFIXES:
+.SECONDARY:
+.PHONY: all clean send
+#-------------------------------------------------------------------------------
+# ToolChains
+#-------------------------------------------------------------------------------
+CCompiler := powerpc-eabi-gcc
+CppCompiler := powerpc-eabi-g++
+Linker := powerpc-eabi-g++
+NameList := powerpc-eabi-nm
 
-# 引用するルールの定義（WUPS用）
-include $(DEVKITPRO)/wups/share/wups_rules
+#-------------------------------------------------------------------------------
+# Environment
+#-------------------------------------------------------------------------------
+DevKitPro := $(DEVKITPRO)
+PortLibs := $(DevKitPro)/portlibs/ppc
+Wups := $(DevKitPro)/wups
+Wut := $(DevKitPro)/wut
+Wums := $(DevKitPro)/wums
+Boost := $(DEVKITPRO)/boost/wiiu
 
-#===============================================================================
-# ディレクトリ設定
-#===============================================================================
-TOPDIR ?= $(CURDIR)
+MachineDependent := -DESPRESSO -mcpu=750 -meabi -mhard-float -D__WIIU__
+#-------------------------------------------------------------------------------
+# Directories
+#-------------------------------------------------------------------------------
+TopDir := $(CURDIR)
 
-WUT_ROOT   := $(DEVKITPRO)/wut
-WUPS_ROOT  := $(DEVKITPRO)/wups
-WUMS_ROOT  := $(DEVKITPRO)/wums
+Target := Example
 
-TARGET      := Plugin
-BUILD       := build
+SourceDir := $(TopDir)/Source
+IncludeDir := $(TopDir)/Include
+BuildDir := $(TopDir)/Build
+DistDir := $(TopDir)/Dist
 
-ROOT_SOURCE := $(TOPDIR)/source
-SOURCES := $(shell find $(ROOT_SOURCE) -type d)
-SOURCES := $(foreach source,$(SOURCES),$(source:$(TOPDIR)/%=%)/)
+#-------------------------------------------------------------------------------
+# Macros
+#-------------------------------------------------------------------------------
+include $(TopDir)/Tools.mk
 
-DATA        := data
-INCLUDES    := include
+#-------------------------------------------------------------------------------
+# Files
+#-------------------------------------------------------------------------------
+BuildIncludeDir := $(BuildDir)/Include
+BuildObjectDir := $(BuildDir)/Object
+BuildDependenceDir := $(BuildDir)/Dependence
 
-#===============================================================================
-# コンパイルオプション
-#===============================================================================
-CFLAGS     := -g -Wall -O2 -ffunction-sections $(MACHDEP)
-CFLAGS     += $(INCLUDE) -D__WIIU__ -D__WUT__ -D__WUPS__
-CXXFLAGS   := $(CFLAGS) -std=c++23
-ASFLAGS    := -g $(ARCH) -mregnames
-LDFLAGS    := -g $(ARCH) $(RPXSPECS) -Wl,-Map,$(notdir $*.map) $(WUPSSPECS)
+CppFile := $(shell find $(SourceDir) -type f -name '*.cpp')
+CppRelative := $(shell realpath --relative-to=$(SourceDir) $(CppFile))
+BuildObjectCppFile := $(patsubst %.cpp,$(BuildObjectDir)/Cpp/%.o,$(CppRelative))
 
-LIBS       := -lwups -lwut -lnotifications
+BuildElfFile := $(BuildDir)/$(Target).elf
+DistWpsFile := $(DistDir)/$(Target).wps
 
-# ライブラリのルートディレクトリ
-LIBDIRS    := $(PORTLIBS) $(WUPS_ROOT) $(WUT_ROOT) $(WUMS_ROOT)
+SendPluginScript := $(TopDir)/SendPlugin.sh
+Logger := udplogserver
 
-#===============================================================================
-# ビルドルール（BUILDディレクトリでビルド実行）
-#===============================================================================
-ifneq ($(BUILD),$(notdir $(CURDIR)))
+#-------------------------------------------------------------------------------
+# Libraries
+#-------------------------------------------------------------------------------
+LibraryEntries := wups wut notifications mappedmemory kernel
+LibraryDirs := $(PortLibs)/lib $(Wups)/lib $(Wut)/lib $(Wums)/lib
+LibraryIncludeDirs := $(PortLibs)/include $(Wups)/include $(Wut)/include $(Wums)/include $(Boost)/include
+LibraryDirFlags := $(foreach dir,$(LibraryDirs),-L$(dir))
+LibraryFlags := $(foreach entry,$(LibraryEntries),-l$(entry))
 
-export OUTPUT := $(CURDIR)/$(TARGET)
-export TOPDIR	:=	$(CURDIR)
+#-------------------------------------------------------------------------------
+# Includes
+#-------------------------------------------------------------------------------
+IncludeDirs := $(IncludeDir) $(BuildIncludeDir) $(LibraryIncludeDirs)
+IncludeFlags := $(foreach dir,$(IncludeDirs),-I$(dir))
 
-# パス設定
-export VPATH := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-                $(foreach dir,$(DATA),$(CURDIR)/$(dir))
-export DEPSDIR := $(CURDIR)/$(BUILD)
+#-------------------------------------------------------------------------------
+# Cpp Flags
+#-------------------------------------------------------------------------------
+CppFlags := $(MachineDependent) $(IncludeFlags) $(LibraryFlags) -Wall -O3 -ffunction-sections -std=c++23
 
-# ファイル収集
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
+#-------------------------------------------------------------------------------
+# Linker Flags
+#-------------------------------------------------------------------------------
+LinkerScript := -T$(Wums)/share/libmappedmemory.ld -T$(Wums)/share/libkernel.ld -T$(Wups)/share/wups.ld
+Specs := -specs=$(Wut)/share/wut.specs -specs=$(Wups)/share/wups.specs
+LinkerFlags := $(LinkerScript) $(Specs) -g
 
-# リンカ選択（C++ファイルが存在すればCXXでリンク）
-ifeq ($(strip $(CPPFILES)),)
-	export LD := $(CC)
-else
-	export LD := $(CXX)
-endif
+#-------------------------------------------------------------------------------
+# Rules
+#-------------------------------------------------------------------------------
+all: $(DistWpsFile)
+	@rm -rf $(BuildTempDir)
 
-# オブジェクトファイルとヘッダー生成対象
-export OFILES_BIN  := $(addsuffix .o,$(BINFILES))
-export OFILES_SRC  := $(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
-export OFILES      := $(OFILES_BIN) $(OFILES_SRC)
-export HFILES_BIN  := $(addsuffix .h,$(subst .,_,$(BINFILES)))
+$(BuildObjectDir)/Cpp/%.o: $(SourceDir)/%.cpp
+	@echo $(notdir $<)
+	$(call cpp2o,$<,$@,$(BuildDependenceDir)/$*.d,$(CppFlags))
 
-# インクルードパス・ライブラリパス
-export INCLUDE     := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
-                      $(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-                      -I$(CURDIR)/$(BUILD)
-export LIBPATHS    := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+$(BuildDir)/%.elf: $(BuildObjectCppFile) $(BuildObjectBinaryFile)
+	@echo linking ... $(notdir $@)
+	@$(call o2elf,$^,$@,$(LinkerFlags),$(LibraryDirFlags),$(LibraryFlags),$(BuildDir)/$*.map)
+	@$(call elf2lst,$@,$(BuildDir)/$*.lst)
 
-#===============================================================================
-# エントリーポイント
-#===============================================================================
-.PHONY: all clean $(BUILD)
+$(DistDir)/%.wps: $(BuildDir)/%.elf
+	@echo building ... $(notdir $@)
+	@$(call elf2wps,$<,$@)
 
-all: $(BUILD)
-
-$(BUILD):
-	@$(shell [ ! -d $(BUILD) ] && mkdir -p $(BUILD))
-	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+-include $(BuildDependenceDir)/*.d
 
 clean:
-	@echo cleaning ...
-	@rm -fr $(BUILD) $(TARGET).wps $(TARGET).elf
+	@echo clean ...
+	@rm -rf $(BuildDir) $(DistDir)
 
-#===============================================================================
-else  # $(BUILD) ディレクトリでの処理
-#===============================================================================
-.PHONY: all
-
-DEPENDS := $(OFILES:.o=.d)
-
-#-------------------------------------------------------------------------------
-# メインターゲット
-#-------------------------------------------------------------------------------
-all: $(OUTPUT).wps
-
-# 依存関係
-$(OUTPUT).wps: $(OUTPUT).elf
-$(OUTPUT).elf: $(OFILES)
-
-$(OFILES_SRC): $(HFILES_BIN)
-
-#-------------------------------------------------------------------------------
-# バイナリファイルの変換（*.bin → .o/.h）
-#-------------------------------------------------------------------------------
-%.bin.o %_bin.h: %.bin
-	@echo $(notdir $<)
-	@$(bin2o)
-
-# 依存関係の自動読み込み
--include $(DEPENDS)
-
-endif
-#===============================================================================
+send: $(DistWpsFile)
+	@echo sending ... $(notdir $<)
+	@$(SendPluginScript) $<
+	@$(Logger)

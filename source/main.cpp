@@ -4,12 +4,12 @@
 #include <whb/log_udp.h>
 #include <whb/log.h>
 
-WUPS_PLUGIN_NAME("Plugin");
+WUPS_PLUGIN_NAME("Example");
 WUPS_PLUGIN_DESCRIPTION("Description");
 WUPS_PLUGIN_VERSION("v1.0");
 WUPS_PLUGIN_AUTHOR("Author");
 
-WUPS_USE_STORAGE("plugin");
+WUPS_USE_STORAGE("Example");
 
 ON_APPLICATION_START()
 {
