@@ -41,7 +41,6 @@ include $(TopDir)/Tools.mk
 #-------------------------------------------------------------------------------
 # Files
 #-------------------------------------------------------------------------------
-BuildIncludeDir := $(BuildDir)/Include
 BuildObjectDir := $(BuildDir)/Object
 BuildDependenceDir := $(BuildDir)/Dependence
 
@@ -67,7 +66,7 @@ LibraryFlags := $(foreach entry,$(LibraryEntries),-l$(entry))
 #-------------------------------------------------------------------------------
 # Includes
 #-------------------------------------------------------------------------------
-IncludeDirs := $(IncludeDir) $(BuildIncludeDir) $(LibraryIncludeDirs)
+IncludeDirs := $(IncludeDir) $(LibraryIncludeDirs)
 IncludeFlags := $(foreach dir,$(IncludeDirs),-I$(dir))
 
 #-------------------------------------------------------------------------------
@@ -86,13 +85,12 @@ LinkerFlags := $(LinkerScript) $(Specs) -g
 # Rules
 #-------------------------------------------------------------------------------
 all: $(DistWpsFile)
-	@rm -rf $(BuildTempDir)
 
 $(BuildObjectDir)/Cpp/%.o: $(SourceDir)/%.cpp
 	@echo $(notdir $<)
 	$(call cpp2o,$<,$@,$(BuildDependenceDir)/$*.d,$(CppFlags))
 
-$(BuildDir)/%.elf: $(BuildObjectCppFile) $(BuildObjectBinaryFile)
+$(BuildDir)/%.elf: $(BuildObjectCppFile)
 	@echo linking ... $(notdir $@)
 	@$(call o2elf,$^,$@,$(LinkerFlags),$(LibraryDirFlags),$(LibraryFlags),$(BuildDir)/$*.map)
 	@$(call elf2lst,$@,$(BuildDir)/$*.lst)
